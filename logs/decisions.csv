@@ -1,0 +1,2 @@
+timestamp_utc,direction,confidence,weighted_score,entry,stop_loss,take_profit,forced_neutral,reasons,warnings
+2026-09-05T16:39:47.076715+00:00,NEUTRE,0.0582,-0.0582,4428.91781,,,False,"Tendance baissière modérée : écart de -0.44% entre moyenne courte (4428.97) et longue (4448.39) | RSI à 52 : momentum haussier, intensité proportionnelle à l'écart avec 50 | EUR/USD stable (-0.02% sur 6h) — pas de signal macro fort | Sentiment (or/Fed/dollar) : 17 signaux positifs vs 14 négatifs, sur 62 titres uniques analysés (couverture 100%)",
