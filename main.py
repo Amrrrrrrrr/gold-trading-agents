@@ -1,10 +1,8 @@
 """
-Orchestrateur principal.
-Toutes les heures : récupère les données, fait tourner les agents,
-agrège la décision, envoie la notification Telegram.
+Point d'entrée principal.
+Sur GitHub Actions, ce script est déclenché toutes les heures par un workflow
+cron : il tourne UNE FOIS puis s'arrête (pas de boucle infinie ici).
 """
-import time
-import traceback
 from datetime import datetime
 
 import config
@@ -39,15 +37,5 @@ def run_cycle():
           f"(confiance {decision['confidence']*100:.0f}%)")
 
 
-def main_loop():
-    while True:
-        try:
-            run_cycle()
-        except Exception:
-            print("Erreur pendant le cycle :")
-            traceback.print_exc()
-        time.sleep(config.CHECK_INTERVAL_SECONDS)
-
-
 if __name__ == "__main__":
-    main_loop()
+    run_cycle()
