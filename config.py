@@ -74,4 +74,4 @@ ATR_MULTIPLIER_TP = 2.5   # take-profit = prix +/- (ATR * ce multiplicateur)
 
 # Capital et risque par trade — À AJUSTER avec ton montant exact sur XTB
 ACCOUNT_BALANCE_EUR = 500.0
-RISK_PER_TRADE_PCT = 0.02  # 2% du capital max risqué par trade
+RISK_PER_TRADE_PCT = 0.005  # 0.5% — mode calibration : edge non encore prouvé en réel (voir backtest)

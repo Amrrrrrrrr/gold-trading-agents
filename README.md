@@ -91,6 +91,25 @@ gold-trading-agent/
 - **Pas de backtesting** : le système n'a pas encore été testé sur données
   historiques pour valider sa fiabilité avant la semaine de démo
 
+## ⚠️ État de validation (important avant de trader en réel)
+
+Le backtest réaliste (SL/TP simulés bougie par bougie, coûts de spread inclus)
+montre que la combinaison **technique + macro seule a un edge non prouvé**,
+voire légèrement négatif (~35-36% de réussite, sous le seuil de rentabilité
+d'environ 37.5% avec les ratios SL/TP actuels). Deux tentatives d'amélioration
+de la logique d'entrée (sortie réaliste, structure pullback+cassure) n'ont
+pas changé ce constat — ce n'est probablement pas un problème de réglage,
+mais une limite réelle du signal SMA+RSI seul sur cet historique.
+
+**Le sentiment et le calendrier ne sont pas backtestables** (pas d'archives
+gratuites), donc leur contribution réelle reste inconnue tant qu'on n'a pas
+de données live.
+
+**Conséquence pratique : risque réduit à 0.5% par trade** (au lieu de 2%)
+pendant la phase de calibration/démo, le temps d'accumuler assez de
+décisions évaluées pour savoir si le système complet (avec sentiment et
+calendrier) a un edge réel une fois en conditions live.
+
 ## Prochaines étapes suggérées
 
 1. Faire tourner le système une semaine en observant sans forcément suivre chaque signal
