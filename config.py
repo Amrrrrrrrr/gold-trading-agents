@@ -64,6 +64,10 @@ OUTCOME_MIN_MOVE_PCT = 0.10
 # selon le spread réel affiché sur XTB — varie selon le compte/l'heure)
 SPREAD_COST_USD = 0.30
 
+# Durée max de détention simulée dans le backtest avant sortie forcée au prix
+# du marché, si ni le stop-loss ni le take-profit n'ont été touchés (heures)
+MAX_HOLDING_HOURS_BACKTEST = 48
+
 # --- Gestion du risque (suggestions, pas des ordres automatiques) ---
 ATR_MULTIPLIER_SL = 1.5   # stop-loss = prix +/- (ATR * ce multiplicateur)
 ATR_MULTIPLIER_TP = 2.5   # take-profit = prix +/- (ATR * ce multiplicateur)

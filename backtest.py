@@ -50,6 +50,7 @@ def precompute_scores(gold_df: pd.DataFrame, dxy_df: pd.DataFrame) -> pd.DataFra
     trend_component = _clip_series(gap_pct / technical_agent.TREND_MAX_GAP_PCT) * technical_agent.TREND_WEIGHT
     momentum_component = _clip_series((df["rsi"] - 50) / 50) * technical_agent.MOMENTUM_WEIGHT
     df["technical_score"] = (trend_component + momentum_component).clip(-1, 1)
+    # df["atr"] déjà calculée ci-dessus, conservée pour le calcul SL/TP dans simulate_trades
 
     dxy = dxy_df[["date", "close"]].rename(columns={"close": "eur_usd_close"}).sort_values("date")
     dxy["eur_usd_pct_change_6"] = dxy["eur_usd_close"].pct_change(6) * 100
@@ -67,6 +68,17 @@ def precompute_scores(gold_df: pd.DataFrame, dxy_df: pd.DataFrame) -> pd.DataFra
 
 
 def simulate_trades(scored_df: pd.DataFrame, confidence_threshold: float, cooldown_hours: float = 0) -> list:
+    """
+    Simule chaque trade en vérifiant, bougie par bougie après l'entrée, si le
+    stop-loss ou le take-profit est touché en premier (comme un vrai trade),
+    au lieu de sortir arbitrairement à une heure fixe.
+
+    Si le high ET le low d'une même bougie touchent SL et TP tous les deux
+    (mèche large), on suppose conservativement que le SL a été touché en
+    premier — on ne peut pas savoir l'ordre exact intra-bougie sans données
+    tick, donc on prend l'hypothèse la plus défavorable plutôt que la plus
+    optimiste.
+    """
     weighted_score = scored_df["technical_score"] * W_TECH + scored_df["macro_score"] * W_MACRO
     confidence = weighted_score.abs()
 
@@ -76,11 +88,16 @@ def simulate_trades(scored_df: pd.DataFrame, confidence_threshold: float, cooldo
 
     dates = scored_df["date"].values
     closes = scored_df["close"].values
+    highs = scored_df["high"].values
+    lows = scored_df["low"].values
+    atrs = scored_df["atr"].values
     conf_vals = confidence.values
     score_vals = weighted_score.values
 
-    for i in range(MIN_LOOKBACK, n - LOOKAHEAD_BARS):
-        if conf_vals[i] < confidence_threshold:
+    max_holding = config.MAX_HOLDING_HOURS_BACKTEST
+
+    for i in range(MIN_LOOKBACK, n - 1):
+        if conf_vals[i] < confidence_threshold or pd.isna(atrs[i]):
             continue
 
         current_time = dates[i]
@@ -92,24 +109,50 @@ def simulate_trades(scored_df: pd.DataFrame, confidence_threshold: float, cooldo
 
         direction = "LONG" if score_vals[i] > 0 else "SHORT"
         entry_price = closes[i]
-        exit_price = closes[i + LOOKAHEAD_BARS]
+        atr = atrs[i]
+
+        if direction == "LONG":
+            stop_loss = entry_price - atr * config.ATR_MULTIPLIER_SL
+            take_profit = entry_price + atr * config.ATR_MULTIPLIER_TP
+        else:
+            stop_loss = entry_price + atr * config.ATR_MULTIPLIER_SL
+            take_profit = entry_price - atr * config.ATR_MULTIPLIER_TP
+
+        max_j = min(i + max_holding, n - 1)
+        exit_price = None
+        exit_reason = "TIMEOUT"
+
+        for j in range(i + 1, max_j + 1):
+            high_j, low_j = highs[j], lows[j]
+            if direction == "LONG":
+                hit_tp = high_j >= take_profit
+                hit_sl = low_j <= stop_loss
+            else:
+                hit_tp = low_j <= take_profit
+                hit_sl = high_j >= stop_loss
+
+            if hit_sl:  # priorité au SL si ambiguïté (hypothèse conservative)
+                exit_price, exit_reason = stop_loss, "SL"
+                break
+            if hit_tp:
+                exit_price, exit_reason = take_profit, "TP"
+                break
+
+        if exit_price is None:
+            exit_price = closes[max_j]
 
         pct_move = ((exit_price - entry_price) / entry_price) * 100
         gross_pnl_pct = pct_move if direction == "LONG" else -pct_move
 
-        # Coût de spread réaliste, converti en % du prix d'entrée
         spread_pct = (config.SPREAD_COST_USD / entry_price) * 100
         net_pnl_pct = gross_pnl_pct - spread_pct
-
-        won = None
-        if abs(pct_move) >= MIN_MOVE_PCT:
-            won = net_pnl_pct > 0
 
         trades.append({
             "time": pd.Timestamp(current_time),
             "direction": direction,
             "pnl_pct": net_pnl_pct,
-            "won": won,
+            "won": net_pnl_pct > 0,
+            "exit_reason": exit_reason,
         })
         last_trade_time = current_time
 
@@ -138,6 +181,11 @@ def summarize(trades: list) -> dict:
         peak = max(peak, value)
         max_drawdown = max(max_drawdown, peak - value)
 
+    exit_reasons = {}
+    for t in trades:
+        reason = t.get("exit_reason", "?")
+        exit_reasons[reason] = exit_reasons.get(reason, 0) + 1
+
     return {
         "total_trades": len(trades),
         "decisive_trades": len(decisive),
@@ -145,6 +193,7 @@ def summarize(trades: list) -> dict:
         "cumulative_pnl_pct": round(cumulative_pnl, 2),
         "max_drawdown_pct": round(max_drawdown, 2),
         "avg_pnl_per_trade_pct": round(cumulative_pnl / len(trades), 3) if trades else 0.0,
+        "exit_reasons": exit_reasons,
     }
 
 
@@ -194,8 +243,10 @@ if __name__ == "__main__":
     if overall_stats["total_trades"] == 0:
         report_lines.append("Aucun trade déclenché avec cette configuration sur la période testée.")
     else:
+        exit_breakdown = ", ".join(f"{k}: {v}" for k, v in overall_stats["exit_reasons"].items())
         report_lines += [
             f"• Trades : {overall_stats['total_trades']} sur {(gold_df['date'].iloc[-1] - gold_df['date'].iloc[MIN_LOOKBACK]).days} jours",
+            f"• Sorties : {exit_breakdown}",
             f"• Réussite : {overall_stats['win_rate_pct']}%",
             f"• P&L net cumulé : {overall_stats['cumulative_pnl_pct']:+.2f}%",
             f"• Drawdown max : -{overall_stats['max_drawdown_pct']:.2f}%",
