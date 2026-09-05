@@ -1,11 +1,24 @@
 """
-Agent Analyse Technique.
-Calcule des indicateurs classiques (SMA, RSI, ATR) sur les données de prix de l'or
-et en déduit un score directionnel entre -1 (baissier fort) et +1 (haussier fort),
-accompagné d'explications lisibles.
+Agent Analyse Technique — version continue.
+Calcule des indicateurs classiques (SMA, RSI, ATR) sur les données de prix de
+l'or et en déduit un score directionnel entre -1 (baissier fort) et +1
+(haussier fort).
+
+Contrairement à une v1 à paliers fixes (ex: "RSI > 50 -> +0.15" peu importe
+si RSI = 51 ou 69), le score est ici continu : un écart de tendance ou un
+RSI plus extrême pèse proportionnellement plus lourd dans la décision finale.
 """
 import pandas as pd
 import config
+
+# Poids internes des deux composantes (somme = 1.0, le score final agent
+# reste dans [-1, 1] avant d'être pondéré par WEIGHTS["technical"] globalement)
+TREND_WEIGHT = 0.6
+MOMENTUM_WEIGHT = 0.4
+
+# Écart (%) entre moyennes mobiles au-delà duquel on considère la tendance
+# comme "pleinement forte" (score de tendance saturé à +/-1 sur sa composante)
+TREND_MAX_GAP_PCT = 1.0
 
 
 def compute_sma(series: pd.Series, period: int) -> pd.Series:
@@ -31,10 +44,14 @@ def compute_atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
     return true_range.rolling(window=period).mean()
 
 
+def _clip(value: float, lo: float = -1.0, hi: float = 1.0) -> float:
+    return max(lo, min(hi, value))
+
+
 def analyze(df: pd.DataFrame) -> dict:
     """
     Retourne un dict avec :
-    - score : float entre -1 et 1
+    - score : float entre -1 et 1 (continu)
     - reasons : liste de phrases explicatives
     - warnings : signaux contraires ou points de prudence
     - last_price, atr (utiles pour le calcul de SL/TP)
@@ -50,36 +67,32 @@ def analyze(df: pd.DataFrame) -> dict:
     warnings = []
     score = 0.0
 
-    # --- Tendance (croisement de moyennes mobiles) ---
+    # --- Tendance (écart relatif entre moyennes mobiles, continu) ---
     if pd.notna(last["sma_short"]) and pd.notna(last["sma_long"]):
-        if last["sma_short"] > last["sma_long"]:
-            score += 0.4
-            reasons.append(
-                f"Tendance haussière : moyenne courte ({last['sma_short']:.2f}) "
-                f"au-dessus de la moyenne longue ({last['sma_long']:.2f})"
-            )
-        else:
-            score -= 0.4
-            reasons.append(
-                f"Tendance baissière : moyenne courte ({last['sma_short']:.2f}) "
-                f"sous la moyenne longue ({last['sma_long']:.2f})"
-            )
+        gap_pct = ((last["sma_short"] - last["sma_long"]) / last["sma_long"]) * 100
+        trend_component = _clip(gap_pct / TREND_MAX_GAP_PCT) * TREND_WEIGHT
+        score += trend_component
 
-    # --- Momentum (RSI) ---
+        direction_word = "haussière" if gap_pct > 0 else "baissière"
+        strength_word = "forte" if abs(gap_pct) >= TREND_MAX_GAP_PCT else "modérée" if abs(gap_pct) >= TREND_MAX_GAP_PCT / 3 else "faible"
+        reasons.append(
+            f"Tendance {direction_word} {strength_word} : écart de {gap_pct:+.2f}% entre "
+            f"moyenne courte ({last['sma_short']:.2f}) et longue ({last['sma_long']:.2f})"
+        )
+
+    # --- Momentum (RSI, distance continue à 50) ---
     if pd.notna(last["rsi"]):
         rsi_val = last["rsi"]
+        momentum_component = _clip((rsi_val - 50) / 50) * MOMENTUM_WEIGHT
+        score += momentum_component
+
         if rsi_val > 70:
-            score -= 0.3
             warnings.append(f"RSI à {rsi_val:.0f} : zone de surachat, risque de repli")
         elif rsi_val < 30:
-            score += 0.3
             warnings.append(f"RSI à {rsi_val:.0f} : zone de survente, risque de rebond")
-        elif rsi_val > 50:
-            score += 0.15
-            reasons.append(f"RSI à {rsi_val:.0f} : momentum haussier modéré")
         else:
-            score -= 0.15
-            reasons.append(f"RSI à {rsi_val:.0f} : momentum baissier modéré")
+            direction_word = "haussier" if rsi_val > 50 else "baissier"
+            reasons.append(f"RSI à {rsi_val:.0f} : momentum {direction_word}, intensité proportionnelle à l'écart avec 50")
 
     # --- Volatilité (ATR) pour prudence ---
     if pd.notna(last["atr"]):
@@ -87,7 +100,7 @@ def analyze(df: pd.DataFrame) -> dict:
         if atr_pct > 1.5:
             warnings.append(f"Volatilité élevée (ATR = {atr_pct:.2f}% du prix)")
 
-    score = max(-1.0, min(1.0, score))
+    score = _clip(score)
 
     return {
         "score": score,
