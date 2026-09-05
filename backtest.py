@@ -33,8 +33,13 @@ W_MACRO = config.WEIGHTS["macro"] / _TOTAL
 MIN_LOOKBACK = max(config.SMA_LONG, config.RSI_PERIOD, config.ATR_PERIOD) + 5
 
 
-def run_backtest(gold_df: pd.DataFrame, dxy_df: pd.DataFrame) -> dict:
+def run_backtest(gold_df: pd.DataFrame, dxy_df: pd.DataFrame,
+                  confidence_threshold: float = None, cooldown_hours: float = 0) -> dict:
+    if confidence_threshold is None:
+        confidence_threshold = config.CONFIDENCE_THRESHOLD_NEUTRAL
+
     trades = []
+    last_trade_time = None
 
     for i in range(MIN_LOOKBACK, len(gold_df) - LOOKAHEAD_BARS):
         window = gold_df.iloc[: i + 1]
@@ -51,8 +56,13 @@ def run_backtest(gold_df: pd.DataFrame, dxy_df: pd.DataFrame) -> dict:
         weighted_score = tech["score"] * W_TECH + macro["score"] * W_MACRO
         confidence = abs(weighted_score)
 
-        if confidence < config.CONFIDENCE_THRESHOLD_NEUTRAL:
+        if confidence < confidence_threshold:
             continue  # NEUTRE : pas de trade simulé
+
+        if last_trade_time is not None and cooldown_hours > 0:
+            hours_since_last = (current_time - last_trade_time).total_seconds() / 3600
+            if hours_since_last < cooldown_hours:
+                continue  # en cooldown : on ignore ce signal, même s'il est valide
 
         direction = "LONG" if weighted_score > 0 else "SHORT"
         entry_price = window["close"].iloc[-1]
@@ -74,6 +84,7 @@ def run_backtest(gold_df: pd.DataFrame, dxy_df: pd.DataFrame) -> dict:
             "pnl_pct": pnl_pct,
             "won": won,
         })
+        last_trade_time = current_time
 
     return summarize(trades)
 
@@ -128,6 +139,26 @@ def format_report(results: dict, period_desc: str) -> str:
     )
 
 
+def format_sweep_report(sweep_results: list, period_desc: str) -> str:
+    lines = [
+        f"📉 BACKTEST SWEEP — {period_desc}",
+        "⚠️ Technique + Macro uniquement (sentiment/calendrier non testables rétroactivement)",
+        "",
+        "Seuil | Cooldown | Trades | Réussite | P&L moy/trade",
+    ]
+    for params, results in sweep_results:
+        threshold, cooldown = params
+        if results["total_trades"] == 0:
+            lines.append(f"{threshold:.2f} | {cooldown}h | 0 trades | — | —")
+            continue
+        lines.append(
+            f"{threshold:.2f} | {cooldown}h | {results['total_trades']} "
+            f"({results.get('trades_per_day', 0):.1f}/j) | {results['win_rate_pct']}% | "
+            f"{results['avg_pnl_per_trade_pct']:+.3f}%"
+        )
+    return "\n".join(lines)
+
+
 if __name__ == "__main__":
     print("Récupération des données historiques...")
     gold_df = data_agent.get_gold_data(interval="1h", outputsize=5000)
@@ -135,10 +166,22 @@ if __name__ == "__main__":
 
     print(f"{len(gold_df)} bougies or, {len(dxy_df)} bougies EUR/USD récupérées.")
 
-    results = run_backtest(gold_df, dxy_df)
-
+    period_days = (gold_df["date"].iloc[-1] - gold_df["date"].iloc[MIN_LOOKBACK]).days or 1
     period_desc = f"{gold_df['date'].iloc[MIN_LOOKBACK].date()} à {gold_df['date'].iloc[-1].date()}"
-    report = format_report(results, period_desc)
 
+    # Sweep : seuils plus exigeants que le défaut actuel (0.15) + cooldowns variés
+    thresholds_to_test = [0.15, 0.30, 0.45, 0.60]
+    cooldowns_to_test = [0, 6, 12, 24]
+
+    sweep_results = []
+    for threshold in thresholds_to_test:
+        for cooldown in cooldowns_to_test:
+            results = run_backtest(gold_df, dxy_df, confidence_threshold=threshold, cooldown_hours=cooldown)
+            if results["total_trades"] > 0:
+                results["trades_per_day"] = results["total_trades"] / period_days
+            sweep_results.append(((threshold, cooldown), results))
+            print(f"seuil={threshold} cooldown={cooldown}h -> {results}")
+
+    report = format_sweep_report(sweep_results, period_desc)
     print(report)
     telegram_bot.send_message(report)
