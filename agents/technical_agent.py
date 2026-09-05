@@ -86,13 +86,15 @@ def analyze(df: pd.DataFrame) -> dict:
         momentum_component = _clip((rsi_val - 50) / 50) * MOMENTUM_WEIGHT
         score += momentum_component
 
+        direction_word = "haussier" if rsi_val > 50 else "baissier"
+        reasons.append(
+            f"RSI à {rsi_val:.0f} : momentum {direction_word}, intensité proportionnelle à l'écart avec 50"
+        )
+
         if rsi_val > 70:
-            warnings.append(f"RSI à {rsi_val:.0f} : zone de surachat, risque de repli")
+            warnings.append(f"RSI à {rsi_val:.0f} : zone de surachat, risque de repli malgré le momentum haussier compté ci-dessus")
         elif rsi_val < 30:
-            warnings.append(f"RSI à {rsi_val:.0f} : zone de survente, risque de rebond")
-        else:
-            direction_word = "haussier" if rsi_val > 50 else "baissier"
-            reasons.append(f"RSI à {rsi_val:.0f} : momentum {direction_word}, intensité proportionnelle à l'écart avec 50")
+            warnings.append(f"RSI à {rsi_val:.0f} : zone de survente, risque de rebond malgré le momentum baissier compté ci-dessus")
 
     # --- Volatilité (ATR) pour prudence ---
     if pd.notna(last["atr"]):
