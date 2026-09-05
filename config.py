@@ -27,6 +27,11 @@ SMA_LONG = 50
 RSI_PERIOD = 14
 ATR_PERIOD = 14
 
+# --- Confluence multi-timeframe (H1 + H4) ---
+# Facteur appliqué au score technique H1 si la tendance H4 est contraire
+# (0.4 = on garde 40% de la force du signal, on ne l'annule pas totalement)
+MULTI_TIMEFRAME_DISAGREEMENT_FACTOR = 0.4
+
 # --- Pondération des agents dans la décision finale ---
 # La somme doit faire 1.0
 WEIGHTS = {
@@ -54,6 +59,10 @@ OUTCOME_EVALUATION_HOURS = 4
 # Mouvement de prix minimum (%) pour considérer que le marché a "confirmé"
 # une direction plutôt que d'être resté plat
 OUTCOME_MIN_MOVE_PCT = 0.10
+
+# Coût de spread estimé pour un aller-retour sur XAUUSD (en dollars, à ajuster
+# selon le spread réel affiché sur XTB — varie selon le compte/l'heure)
+SPREAD_COST_USD = 0.30
 
 # --- Gestion du risque (suggestions, pas des ordres automatiques) ---
 ATR_MULTIPLIER_SL = 1.5   # stop-loss = prix +/- (ATR * ce multiplicateur)

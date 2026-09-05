@@ -14,10 +14,14 @@ def format_message(decision: dict) -> str:
         emoji = "⚠️" + emoji
     now = datetime.now().strftime("%H:%M")
 
+    status_tag = ""
+    if decision["direction"] in ("LONG", "SHORT"):
+        status_tag = " [CONFIRMÉ]" if decision.get("is_confirmed", True) else " [EN ATTENTE DE CONFIRMATION]"
+
     lines = [
         f"{emoji} OR (XAU/USD) — {now}",
         "",
-        f"📊 DÉCISION : {decision['direction']} (confiance : {decision['confidence']*100:.0f}%)",
+        f"📊 DÉCISION : {decision['direction']}{status_tag} (confiance : {decision['confidence']*100:.0f}%)",
         "",
         "💡 RAISONS :",
     ]

@@ -1,16 +1,19 @@
 """
-Backtesting sur données historiques (version optimisée, vectorisée).
-Simule le fonctionnement du système sur plusieurs mois de données passées de
-l'or, SANS regarder dans le futur (tous les indicateurs sont calculés avec
-des fenêtres glissantes qui ne regardent que le passé, donc les recalculer
-une seule fois sur toute la série est strictement équivalent à les recalculer
-à chaque instant t sur les données jusqu'à t — mais beaucoup plus rapide).
+Backtesting sur données historiques (version walk-forward + coûts réels).
 
-LIMITE IMPORTANTE : ce backtest ne couvre que les agents Technique et Macro.
-Les agents Sentiment (news) et Calendrier ne peuvent pas être testés
-rétroactivement sans un accès payant à des archives de news/calendrier — ce
-backtest est donc une validation partielle, pas une garantie de performance
-complète du système final (qui inclut aussi le sentiment et le calendrier).
+Deux améliorations par rapport à la v1 :
+1. Coût de spread déduit de chaque trade (config.SPREAD_COST_USD), pour un
+   P&L réaliste plutôt qu'un chiffre optimiste sans friction.
+2. Validation walk-forward : au lieu d'un seul test sur toute la période
+   (risque de sur-ajustement caché), on découpe l'historique en blocs
+   mensuels et on rapporte la performance bloc par bloc. Un système robuste
+   doit rester globalement cohérent d'un mois à l'autre, pas juste bon en
+   moyenne sur l'ensemble.
+
+LIMITE IMPORTANTE : ce backtest ne couvre que les agents Technique et Macro
+(H1 uniquement, sans confluence H4, sans confirmation différée, sans filtre
+de session). Le sentiment et le calendrier ne sont pas testables
+rétroactivement sans archives payantes. C'est une validation partielle.
 
 Lancé manuellement via GitHub Actions (workflow_dispatch), pas sur un cron.
 """
@@ -48,7 +51,6 @@ def precompute_scores(gold_df: pd.DataFrame, dxy_df: pd.DataFrame) -> pd.DataFra
     momentum_component = _clip_series((df["rsi"] - 50) / 50) * technical_agent.MOMENTUM_WEIGHT
     df["technical_score"] = (trend_component + momentum_component).clip(-1, 1)
 
-    # Macro : pct change EUR/USD sur 6 périodes, aligné sur le timestamp gold le plus proche (passé)
     dxy = dxy_df[["date", "close"]].rename(columns={"close": "eur_usd_close"}).sort_values("date")
     dxy["eur_usd_pct_change_6"] = dxy["eur_usd_close"].pct_change(6) * 100
 
@@ -64,7 +66,7 @@ def precompute_scores(gold_df: pd.DataFrame, dxy_df: pd.DataFrame) -> pd.DataFra
     return merged
 
 
-def run_backtest(scored_df: pd.DataFrame, confidence_threshold: float, cooldown_hours: float = 0) -> dict:
+def simulate_trades(scored_df: pd.DataFrame, confidence_threshold: float, cooldown_hours: float = 0) -> list:
     weighted_score = scored_df["technical_score"] * W_TECH + scored_df["macro_score"] * W_MACRO
     confidence = weighted_score.abs()
 
@@ -93,16 +95,25 @@ def run_backtest(scored_df: pd.DataFrame, confidence_threshold: float, cooldown_
         exit_price = closes[i + LOOKAHEAD_BARS]
 
         pct_move = ((exit_price - entry_price) / entry_price) * 100
-        pnl_pct = pct_move if direction == "LONG" else -pct_move
+        gross_pnl_pct = pct_move if direction == "LONG" else -pct_move
+
+        # Coût de spread réaliste, converti en % du prix d'entrée
+        spread_pct = (config.SPREAD_COST_USD / entry_price) * 100
+        net_pnl_pct = gross_pnl_pct - spread_pct
 
         won = None
         if abs(pct_move) >= MIN_MOVE_PCT:
-            won = pnl_pct > 0
+            won = net_pnl_pct > 0
 
-        trades.append({"pnl_pct": pnl_pct, "won": won})
+        trades.append({
+            "time": pd.Timestamp(current_time),
+            "direction": direction,
+            "pnl_pct": net_pnl_pct,
+            "won": won,
+        })
         last_trade_time = current_time
 
-    return summarize(trades)
+    return trades
 
 
 def summarize(trades: list) -> dict:
@@ -137,22 +148,23 @@ def summarize(trades: list) -> dict:
     }
 
 
-def format_sweep_report(sweep_results: list, period_desc: str) -> str:
-    lines = [
-        f"📉 BACKTEST SWEEP — {period_desc}",
-        "⚠️ Technique + Macro uniquement (sentiment/calendrier non testables rétroactivement)",
-        "",
-        "Seuil | Cooldown | Trades | Réussite | P&L moy/trade",
-    ]
-    for params, results in sweep_results:
-        threshold, cooldown = params
-        if results["total_trades"] == 0:
-            lines.append(f"{threshold:.2f} | {cooldown}h | 0 trades | — | —")
+def walk_forward_report(trades: list) -> str:
+    """Regroupe les trades par mois calendaire pour vérifier la stabilité."""
+    if not trades:
+        return "Aucun trade à analyser en walk-forward."
+
+    df = pd.DataFrame(trades)
+    df["month"] = df["time"].dt.to_period("M")
+
+    lines = ["📆 WALK-FORWARD (mois par mois, coûts inclus) :"]
+    for month, group in df.groupby("month"):
+        month_trades = group.to_dict("records")
+        stats = summarize(month_trades)
+        if stats["total_trades"] == 0:
             continue
         lines.append(
-            f"{threshold:.2f} | {cooldown}h | {results['total_trades']} "
-            f"({results.get('trades_per_day', 0):.1f}/j) | {results['win_rate_pct']}% | "
-            f"{results['avg_pnl_per_trade_pct']:+.3f}%"
+            f"• {month} : {stats['total_trades']} trades, "
+            f"{stats['win_rate_pct']}% réussite, P&L net {stats['cumulative_pnl_pct']:+.2f}%"
         )
     return "\n".join(lines)
 
@@ -165,21 +177,33 @@ if __name__ == "__main__":
 
     scored_df = precompute_scores(gold_df, dxy_df)
 
-    period_days = (gold_df["date"].iloc[-1] - gold_df["date"].iloc[MIN_LOOKBACK]).days or 1
+    # Configuration actuellement en production (seuil 0.45, cooldown 24h)
+    trades = simulate_trades(scored_df, confidence_threshold=config.CONFIDENCE_THRESHOLD_NEUTRAL,
+                              cooldown_hours=config.TRADE_COOLDOWN_HOURS)
+    overall_stats = summarize(trades)
+
     period_desc = f"{gold_df['date'].iloc[MIN_LOOKBACK].date()} à {gold_df['date'].iloc[-1].date()}"
 
-    thresholds_to_test = [0.15, 0.30, 0.45, 0.60]
-    cooldowns_to_test = [0, 6, 12, 24]
+    report_lines = [
+        f"📉 BACKTEST (coûts inclus, spread ~{config.SPREAD_COST_USD}$/trade) — {period_desc}",
+        f"Config actuelle : seuil {config.CONFIDENCE_THRESHOLD_NEUTRAL}, cooldown {config.TRADE_COOLDOWN_HOURS}h",
+        "⚠️ Technique + Macro uniquement (H1, sans H4/confirmation/session/sentiment/calendrier)",
+        "",
+    ]
 
-    sweep_results = []
-    for threshold in thresholds_to_test:
-        for cooldown in cooldowns_to_test:
-            results = run_backtest(scored_df, confidence_threshold=threshold, cooldown_hours=cooldown)
-            if results["total_trades"] > 0:
-                results["trades_per_day"] = results["total_trades"] / period_days
-            sweep_results.append(((threshold, cooldown), results))
-            print(f"seuil={threshold} cooldown={cooldown}h -> {results}")
+    if overall_stats["total_trades"] == 0:
+        report_lines.append("Aucun trade déclenché avec cette configuration sur la période testée.")
+    else:
+        report_lines += [
+            f"• Trades : {overall_stats['total_trades']} sur {(gold_df['date'].iloc[-1] - gold_df['date'].iloc[MIN_LOOKBACK]).days} jours",
+            f"• Réussite : {overall_stats['win_rate_pct']}%",
+            f"• P&L net cumulé : {overall_stats['cumulative_pnl_pct']:+.2f}%",
+            f"• Drawdown max : -{overall_stats['max_drawdown_pct']:.2f}%",
+            f"• P&L net moyen/trade : {overall_stats['avg_pnl_per_trade_pct']:+.3f}%",
+            "",
+            walk_forward_report(trades),
+        ]
 
-    report = format_sweep_report(sweep_results, period_desc)
+    report = "\n".join(report_lines)
     print(report)
     telegram_bot.send_message(report)

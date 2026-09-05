@@ -37,11 +37,27 @@ def _load_weights() -> dict:
     return config.WEIGHTS
 
 
-def aggregate(technical: dict, macro: dict, sentiment: dict, calendar: dict) -> dict:
+def aggregate(technical: dict, macro: dict, sentiment: dict, calendar: dict, h4_trend: int = 0) -> dict:
     weights = _load_weights()
 
+    # --- Confluence multi-timeframe : si H1 et H4 sont en désaccord net,
+    # on réduit la confiance du signal technique plutôt que de l'ignorer
+    # (H4 donne le contexte de fond, H1 le timing)
+    technical_score = technical["score"]
+    confluence_note = None
+    if h4_trend != 0:
+        h1_direction = 1 if technical_score > 0 else (-1 if technical_score < 0 else 0)
+        if h1_direction != 0 and h1_direction != h4_trend:
+            technical_score *= config.MULTI_TIMEFRAME_DISAGREEMENT_FACTOR
+            confluence_note = (
+                f"⚠️ Désaccord H1/H4 : tendance H4 {'haussière' if h4_trend > 0 else 'baissière'} "
+                f"contredit le signal H1 — score technique atténué"
+            )
+        elif h1_direction == h4_trend:
+            confluence_note = "✅ H1 et H4 alignés — signal technique renforcé par la confluence"
+
     weighted_score = (
-        technical["score"] * weights["technical"]
+        technical_score * weights["technical"]
         + macro["score"] * weights["macro"]
         + sentiment["score"] * weights["sentiment"]
     )
@@ -56,6 +72,8 @@ def aggregate(technical: dict, macro: dict, sentiment: dict, calendar: dict) -> 
         direction = "SHORT"
 
     all_reasons = technical["reasons"] + macro["reasons"] + sentiment["reasons"] + calendar["reasons"]
+    if confluence_note:
+        all_reasons.insert(0, confluence_note)
     all_warnings = technical["warnings"] + macro["warnings"] + sentiment["warnings"] + calendar["warnings"]
 
     # --- Alerte (mais plus d'override) : événement macro imminent ---

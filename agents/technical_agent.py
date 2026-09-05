@@ -48,6 +48,21 @@ def _clip(value: float, lo: float = -1.0, hi: float = 1.0) -> float:
     return max(lo, min(hi, value))
 
 
+def get_trend_direction(df: pd.DataFrame) -> int:
+    """
+    Version simplifiée pour la confluence multi-timeframe : retourne
+    1 (haussier), -1 (baissier) ou 0 (indéterminé), basé uniquement sur
+    la position relative des deux moyennes mobiles.
+    """
+    df = df.copy()
+    df["sma_short"] = compute_sma(df["close"], config.SMA_SHORT)
+    df["sma_long"] = compute_sma(df["close"], config.SMA_LONG)
+    last = df.iloc[-1]
+    if pd.isna(last["sma_short"]) or pd.isna(last["sma_long"]):
+        return 0
+    return 1 if last["sma_short"] > last["sma_long"] else -1
+
+
 def analyze(df: pd.DataFrame) -> dict:
     """
     Retourne un dict avec :

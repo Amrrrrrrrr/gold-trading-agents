@@ -11,6 +11,13 @@ from datetime import datetime, timezone
 FRIDAY_CLOSE_HOUR_UTC = 21
 SUNDAY_OPEN_HOUR_UTC = 22
 
+# Session active Londres/New York : c'est là que l'or a le plus de liquidité
+# et de mouvements fiables. En dehors (nuit asiatique), le bruit domine.
+ACTIVE_SESSION_START_UTC = 7   # ouverture de Londres
+ACTIVE_SESSION_END_UTC = 21    # clôture de New York
+PRIME_SESSION_START_UTC = 13   # chevauchement Londres/NY (meilleure liquidité)
+PRIME_SESSION_END_UTC = 17
+
 
 def is_market_open(now: datetime = None) -> bool:
     if now is None:
@@ -26,3 +33,17 @@ def is_market_open(now: datetime = None) -> bool:
         return False
 
     return True
+
+
+def is_active_session(now: datetime = None) -> bool:
+    """Londres + New York, la plage horaire la plus liquide pour l'or."""
+    if now is None:
+        now = datetime.now(timezone.utc)
+    return ACTIVE_SESSION_START_UTC <= now.hour < ACTIVE_SESSION_END_UTC
+
+
+def is_prime_session(now: datetime = None) -> bool:
+    """Chevauchement Londres/NY : la fenêtre la plus fiable de la journée."""
+    if now is None:
+        now = datetime.now(timezone.utc)
+    return PRIME_SESSION_START_UTC <= now.hour < PRIME_SESSION_END_UTC
