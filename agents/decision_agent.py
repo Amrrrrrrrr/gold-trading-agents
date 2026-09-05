@@ -4,13 +4,18 @@ Agrège les scores pondérés des agents Technique, Macro et Sentiment
 pour produire une recommandation finale : LONG / SHORT / NEUTRE,
 avec un niveau de confiance et des niveaux de stop-loss / take-profit suggérés.
 
+Sécurité intégrée : si un événement macro majeur (Fed, CPI, NFP...) est
+imminent (moins de 2h), le système bascule automatiquement en NEUTRE par
+prudence, quel que soit l'avis des autres agents — la volatilité pré-annonce
+rend toute prédiction peu fiable.
+
 IMPORTANT : ceci est un outil d'aide à la décision, pas un conseil financier.
 Toute décision d'achat/vente reste sous la responsabilité de l'utilisateur.
 """
 import config
 
 
-def aggregate(technical: dict, macro: dict, sentiment: dict) -> dict:
+def aggregate(technical: dict, macro: dict, sentiment: dict, calendar: dict) -> dict:
     weighted_score = (
         technical["score"] * config.WEIGHTS["technical"]
         + macro["score"] * config.WEIGHTS["macro"]
@@ -26,8 +31,20 @@ def aggregate(technical: dict, macro: dict, sentiment: dict) -> dict:
     else:
         direction = "SHORT"
 
-    all_reasons = technical["reasons"] + macro["reasons"] + sentiment["reasons"]
-    all_warnings = technical["warnings"] + macro["warnings"] + sentiment["warnings"]
+    all_reasons = technical["reasons"] + macro["reasons"] + sentiment["reasons"] + calendar["reasons"]
+    all_warnings = technical["warnings"] + macro["warnings"] + sentiment["warnings"] + calendar["warnings"]
+
+    # --- Sécurité : événement macro imminent -> override en NEUTRE ---
+    forced_neutral = False
+    if calendar.get("imminent_event"):
+        forced_neutral = True
+        direction = "NEUTRE"
+        confidence = 0.0
+        all_warnings.insert(
+            0,
+            f"⚠️ Décision forcée en NEUTRE : événement macro majeur imminent "
+            f"('{calendar['imminent_event']['title']}')"
+        )
 
     # --- Niveaux suggérés (basés sur l'ATR, pas des ordres automatiques) ---
     entry = technical.get("last_price")
@@ -35,7 +52,7 @@ def aggregate(technical: dict, macro: dict, sentiment: dict) -> dict:
     stop_loss = None
     take_profit = None
 
-    if entry is not None and atr is not None:
+    if not forced_neutral and entry is not None and atr is not None:
         if direction == "LONG":
             stop_loss = entry - atr * config.ATR_MULTIPLIER_SL
             take_profit = entry + atr * config.ATR_MULTIPLIER_TP
@@ -52,4 +69,5 @@ def aggregate(technical: dict, macro: dict, sentiment: dict) -> dict:
         "entry": entry,
         "stop_loss": stop_loss,
         "take_profit": take_profit,
+        "forced_neutral": forced_neutral,
     }

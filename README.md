@@ -73,13 +73,23 @@ gold-trading-agent/
 └── .env.example
 ```
 
-## Limites connues de cette v1 (à améliorer ensuite)
+## Version 2 : ce qui a été renforcé
 
-- **Macro** : utilise seulement la tendance du dollar comme proxy, ne lit pas encore
-  le calendrier économique (Fed, CPI, NFP) en direct
-- **Sentiment** : analyse lexicale simple (mots-clés), pas un vrai modèle NLP
-- **Pas de backtesting** : le système n'a pas encore été testé sur données historiques
-  pour valider sa fiabilité avant la semaine de démo
+- **Calendrier économique réel** : le système lit maintenant le flux gratuit
+  ForexFactory (Fed, CPI, NFP, PCE...) et **bascule automatiquement en NEUTRE**
+  si un événement majeur est imminent (< 2h) — la volatilité pré-annonce rend
+  toute prédiction peu fiable, mieux vaut s'abstenir
+- **Sentiment renforcé** : recherche sur 3 axes (or, Fed/taux, dollar/inflation),
+  dédoublonnage des titres, et score pondéré par la densité de signal détecté
+  (un ratio extrême sur 2 titres ne pèse plus autant qu'un vrai consensus sur 15)
+
+## Limites connues restantes (v2)
+
+- Le calendrier signale la présence d'un événement mais n'essaie pas encore de
+  comparer l'actual vs le forecast une fois publié (amélioration possible v3)
+- Le sentiment reste une analyse lexicale (mots-clés), pas un vrai modèle NLP
+- **Pas de backtesting** : le système n'a pas encore été testé sur données
+  historiques pour valider sa fiabilité avant la semaine de démo
 
 ## Prochaines étapes suggérées
 

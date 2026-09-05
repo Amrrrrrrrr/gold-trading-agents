@@ -1,13 +1,14 @@
 """
 Agent Macro.
-Version 1 : utilise la tendance récente d'EUR/USD comme proxy de la force du
-dollar (l'indice DXY officiel n'est pas disponible sur le plan gratuit Twelve
-Data). L'or est fortement anti-corrélé au dollar : si EUR/USD monte, le
-dollar s'affaiblit, ce qui est généralement favorable à l'or — et inversement.
-
-Limite connue (à annoncer clairement à l'utilisateur) : cette v1 ne lit pas
-encore le calendrier économique (Fed, CPI, NFP) en direct — ce sera une
-amélioration possible en v2 via une API de calendrier économique dédiée.
+Combine deux sources :
+1. Tendance récente d'EUR/USD comme proxy de la force du dollar (le DXY
+   officiel n'est pas disponible sur le plan gratuit Twelve Data). L'or est
+   fortement anti-corrélé au dollar : si EUR/USD monte, le dollar s'affaiblit,
+   ce qui est généralement favorable à l'or — et inversement.
+2. Le contexte du calendrier économique (événement macro récent) fourni par
+   calendar_agent, intégré ici comme contexte informatif (pas de score
+   directionnel dessus, car on ne connaît pas encore la réaction du marché
+   sans backtesting — seulement la présence de l'événement).
 """
 import pandas as pd
 

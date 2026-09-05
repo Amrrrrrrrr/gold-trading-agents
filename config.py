@@ -30,8 +30,8 @@ ATR_PERIOD = 14
 # --- Pondération des agents dans la décision finale ---
 # La somme doit faire 1.0
 WEIGHTS = {
-    "technical": 0.40,
-    "macro": 0.30,
+    "technical": 0.35,
+    "macro": 0.35,
     "sentiment": 0.30,
 }
 

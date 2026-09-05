@@ -10,6 +10,8 @@ TELEGRAM_API_URL = "https://api.telegram.org/bot{token}/sendMessage"
 
 def format_message(decision: dict) -> str:
     emoji = {"LONG": "🟢", "SHORT": "🔴", "NEUTRE": "🟡"}.get(decision["direction"], "🟡")
+    if decision.get("forced_neutral"):
+        emoji = "⏸️"
     now = datetime.now().strftime("%H:%M")
 
     lines = [

@@ -6,7 +6,7 @@ cron : il tourne UNE FOIS puis s'arrête (pas de boucle infinie ici).
 from datetime import datetime
 
 import config
-from agents import data_agent, technical_agent, macro_agent, sentiment_agent, decision_agent
+from agents import data_agent, technical_agent, macro_agent, sentiment_agent, decision_agent, calendar_agent
 import telegram_bot
 
 
@@ -22,14 +22,21 @@ def run_cycle():
     macro_result = macro_agent.analyze(dxy_df)
 
     try:
+        calendar_result = calendar_agent.analyze()
+    except Exception as e:
+        print(f"Avertissement : agent calendrier indisponible ({e})")
+        calendar_result = {"reasons": [], "warnings": ["Agent calendrier indisponible ce cycle"],
+                            "imminent_event": None, "recent_event": None}
+
+    try:
         headlines = sentiment_agent.fetch_gold_headlines()
         sentiment_result = sentiment_agent.analyze(headlines)
     except Exception as e:
         print(f"Avertissement : agent sentiment indisponible ({e})")
         sentiment_result = {"score": 0.0, "reasons": [], "warnings": ["Agent news indisponible ce cycle"]}
 
-    # 3. Décision finale
-    decision = decision_agent.aggregate(technical_result, macro_result, sentiment_result)
+    # 3. Décision finale (avec sécurité calendrier intégrée)
+    decision = decision_agent.aggregate(technical_result, macro_result, sentiment_result, calendar_result)
 
     # 4. Notification
     telegram_bot.notify_decision(decision)
