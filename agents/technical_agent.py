@@ -20,6 +20,14 @@ MOMENTUM_WEIGHT = 0.4
 # comme "pleinement forte" (score de tendance saturé à +/-1 sur sa composante)
 TREND_MAX_GAP_PCT = 1.0
 
+# --- Structure d'entrée (repli + cassure confirmée) ---
+# Inspiré des systèmes de trading algo les mieux notés : plutôt que d'agir
+# dès que la tendance/momentum s'alignent (risque d'entrer au pire moment,
+# juste avant un retournement), on exige qu'un repli récent ait eu lieu puis
+# qu'une cassure confirme la reprise du mouvement dans le sens de la tendance.
+PULLBACK_WINDOW = 4  # nombre de bougies à regarder pour détecter le repli
+NO_STRUCTURE_DAMPENING = 0.25  # score fortement réduit si structure non confirmée
+
 
 def compute_sma(series: pd.Series, period: int) -> pd.Series:
     return series.rolling(window=period).mean()
@@ -61,6 +69,31 @@ def get_trend_direction(df: pd.DataFrame) -> int:
     if pd.isna(last["sma_short"]) or pd.isna(last["sma_long"]):
         return 0
     return 1 if last["sma_short"] > last["sma_long"] else -1
+
+
+def _detect_pullback_breakout(closes: pd.Series, bias: int, window: int = PULLBACK_WINDOW) -> bool:
+    """
+    Vérifie qu'un repli contre la tendance a eu lieu récemment, PUIS que la
+    bougie actuelle casse au-delà de ce repli dans le sens de la tendance
+    (bias). Sans ce pattern, on considère qu'on "chasse" la tendance plutôt
+    que d'entrer sur une vraie confirmation.
+    """
+    if bias == 0 or len(closes) < window + 2:
+        return False
+
+    recent = closes.iloc[-(window + 1):].values
+    pullback_bars = recent[:-1]
+    current = recent[-1]
+    diffs = pd.Series(pullback_bars).diff().dropna()
+
+    if bias > 0:
+        had_pullback = (diffs < 0).any()
+        breakout_confirmed = current > pullback_bars.max()
+    else:
+        had_pullback = (diffs > 0).any()
+        breakout_confirmed = current < pullback_bars.min()
+
+    return bool(had_pullback and breakout_confirmed)
 
 
 def analyze(df: pd.DataFrame) -> dict:
@@ -116,6 +149,16 @@ def analyze(df: pd.DataFrame) -> dict:
         atr_pct = (last["atr"] / last["close"]) * 100
         if atr_pct > 1.5:
             warnings.append(f"Volatilité élevée (ATR = {atr_pct:.2f}% du prix)")
+
+    # --- Structure d'entrée : repli + cassure confirmée ---
+    bias = 1 if score > 0 else (-1 if score < 0 else 0)
+    structure_confirmed = _detect_pullback_breakout(df["close"], bias)
+
+    if structure_confirmed:
+        reasons.insert(0, "✅ Structure confirmée : repli récent suivi d'une cassure dans le sens de la tendance")
+    elif bias != 0:
+        score *= NO_STRUCTURE_DAMPENING
+        reasons.insert(0, "⚠️ Pas de structure de confirmation (repli+cassure) — signal atténué, risque de chasser la tendance")
 
     score = _clip(score)
 

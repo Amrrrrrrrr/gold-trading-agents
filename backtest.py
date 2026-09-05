@@ -49,7 +49,28 @@ def precompute_scores(gold_df: pd.DataFrame, dxy_df: pd.DataFrame) -> pd.DataFra
     gap_pct = ((df["sma_short"] - df["sma_long"]) / df["sma_long"]) * 100
     trend_component = _clip_series(gap_pct / technical_agent.TREND_MAX_GAP_PCT) * technical_agent.TREND_WEIGHT
     momentum_component = _clip_series((df["rsi"] - 50) / 50) * technical_agent.MOMENTUM_WEIGHT
-    df["technical_score"] = (trend_component + momentum_component).clip(-1, 1)
+    raw_score = (trend_component + momentum_component).clip(-1, 1)
+
+    # --- Structure pullback+cassure (vectorisé, équivalent à technical_agent._detect_pullback_breakout) ---
+    window = technical_agent.PULLBACK_WINDOW
+    bias = np.sign(raw_score)
+    diffs = df["close"].diff()
+
+    prior_max = df["close"].shift(1).rolling(window).max()
+    prior_min = df["close"].shift(1).rolling(window).min()
+    had_pullback_down = diffs.shift(1).rolling(window).min() < 0
+    had_pullback_up = diffs.shift(1).rolling(window).max() > 0
+
+    breakout_up = df["close"] > prior_max
+    breakout_down = df["close"] < prior_min
+
+    structure_long = (bias > 0) & breakout_up & had_pullback_down
+    structure_short = (bias < 0) & breakout_down & had_pullback_up
+    structure_confirmed = structure_long | structure_short
+
+    df["technical_score"] = np.where(
+        structure_confirmed, raw_score, raw_score * technical_agent.NO_STRUCTURE_DAMPENING
+    )
     # df["atr"] déjà calculée ci-dessus, conservée pour le calcul SL/TP dans simulate_trades
 
     dxy = dxy_df[["date", "close"]].rename(columns={"close": "eur_usd_close"}).sort_values("date")
