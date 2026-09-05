@@ -37,7 +37,11 @@ WEIGHTS = {
 
 # --- Seuils de décision ---
 CONFIDENCE_THRESHOLD_STRONG = 0.65   # au-dessus : signal jugé "fort"
-CONFIDENCE_THRESHOLD_NEUTRAL = 0.15  # en dessous de cet écart : NEUTRE
+CONFIDENCE_THRESHOLD_NEUTRAL = 0.45  # en dessous de cet écart : NEUTRE (calibré via backtest)
+
+# Délai minimum entre deux décisions directionnelles (LONG/SHORT), pour éviter
+# la sur-réaction et le bruit — calibré via backtest (meilleur ratio réussite/fréquence)
+TRADE_COOLDOWN_HOURS = 24
 
 # --- Auto-calibration ---
 # Nombre minimum de décisions évaluées avant de faire confiance aux poids

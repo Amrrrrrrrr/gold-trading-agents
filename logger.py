@@ -62,3 +62,23 @@ def log_decision(decision: dict) -> None:
         if not file_exists:
             writer.writeheader()
         writer.writerow(row)
+
+
+def get_last_directional_time():
+    """
+    Retourne le datetime (UTC) de la dernière décision LONG/SHORT loggée,
+    ou None si aucune trouvée. Utilisé pour appliquer le cooldown.
+    """
+    if not os.path.isfile(LOG_PATH):
+        return None
+
+    with open(LOG_PATH, newline="", encoding="utf-8") as f:
+        rows = list(csv.DictReader(f))
+
+    for row in reversed(rows):
+        if row.get("direction") in ("LONG", "SHORT"):
+            try:
+                return datetime.fromisoformat(row["timestamp_utc"])
+            except ValueError:
+                return None
+    return None
