@@ -33,6 +33,17 @@ def format_message(decision: dict) -> str:
             f"Take-profit : {decision['take_profit']:.2f}$",
         ]
 
+    position_info = decision.get("position_info")
+    if position_info:
+        lines += [
+            "",
+            "💰 TAILLE DE POSITION SUGGÉRÉE :",
+            f"{position_info['lot_size']} lot(s) — risque : {position_info['risk_amount_eur']}€ "
+            f"(exposition ~{position_info['notional_value_usd']}$)",
+        ]
+        if position_info.get("warning"):
+            lines.append(f"⚠️ {position_info['warning']}")
+
     if decision["warnings"]:
         lines += ["", "🔶 POINTS DE PRUDENCE :"]
         for warning in decision["warnings"]:

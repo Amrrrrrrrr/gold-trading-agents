@@ -54,3 +54,7 @@ OUTCOME_MIN_MOVE_PCT = 0.10
 # --- Gestion du risque (suggestions, pas des ordres automatiques) ---
 ATR_MULTIPLIER_SL = 1.5   # stop-loss = prix +/- (ATR * ce multiplicateur)
 ATR_MULTIPLIER_TP = 2.5   # take-profit = prix +/- (ATR * ce multiplicateur)
+
+# Capital et risque par trade — À AJUSTER avec ton montant exact sur XTB
+ACCOUNT_BALANCE_EUR = 500.0
+RISK_PER_TRADE_PCT = 0.02  # 2% du capital max risqué par trade

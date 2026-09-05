@@ -3,16 +3,23 @@ Point d'entrée principal.
 Sur GitHub Actions, ce script est déclenché toutes les heures par un workflow
 cron : il tourne UNE FOIS puis s'arrête (pas de boucle infinie ici).
 """
-from datetime import datetime
+from datetime import datetime, timezone
 
 import config
-from agents import data_agent, technical_agent, macro_agent, sentiment_agent, decision_agent, calendar_agent
+from agents import data_agent, technical_agent, macro_agent, sentiment_agent, decision_agent, calendar_agent, risk_agent
 import telegram_bot
 import logger
+import market_hours
 
 
 def run_cycle():
-    print(f"[{datetime.now()}] Cycle démarré...")
+    now = datetime.now(timezone.utc)
+
+    if not market_hours.is_market_open(now):
+        print(f"[{now}] Marché fermé (week-end), cycle ignoré.")
+        return
+
+    print(f"[{now}] Cycle démarré...")
 
     # 1. Données
     gold_df = data_agent.get_gold_data(interval="1h", outputsize=100)
@@ -38,6 +45,11 @@ def run_cycle():
 
     # 3. Décision finale (avec sécurité calendrier intégrée)
     decision = decision_agent.aggregate(technical_result, macro_result, sentiment_result, calendar_result)
+
+    # 3b. Taille de position suggérée (si LONG/SHORT)
+    eur_usd_rate = float(dxy_df["close"].iloc[-1]) if len(dxy_df) else 1.0
+    position_info = risk_agent.compute_position_size(decision, eur_usd_rate=eur_usd_rate)
+    decision["position_info"] = position_info
 
     # 4. Notification + log pour suivi de performance
     telegram_bot.notify_decision(decision)
