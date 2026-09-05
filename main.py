@@ -1,0 +1,53 @@
+"""
+Orchestrateur principal.
+Toutes les heures : récupère les données, fait tourner les agents,
+agrège la décision, envoie la notification Telegram.
+"""
+import time
+import traceback
+from datetime import datetime
+
+import config
+from agents import data_agent, technical_agent, macro_agent, sentiment_agent, decision_agent
+import telegram_bot
+
+
+def run_cycle():
+    print(f"[{datetime.now()}] Cycle démarré...")
+
+    # 1. Données
+    gold_df = data_agent.get_gold_data(interval="1h", outputsize=100)
+    dxy_df = data_agent.get_dxy_data(interval="1h", outputsize=20)
+
+    # 2. Analyses
+    technical_result = technical_agent.analyze(gold_df)
+    macro_result = macro_agent.analyze(dxy_df)
+
+    try:
+        headlines = sentiment_agent.fetch_gold_headlines()
+        sentiment_result = sentiment_agent.analyze(headlines)
+    except Exception as e:
+        print(f"Avertissement : agent sentiment indisponible ({e})")
+        sentiment_result = {"score": 0.0, "reasons": [], "warnings": ["Agent news indisponible ce cycle"]}
+
+    # 3. Décision finale
+    decision = decision_agent.aggregate(technical_result, macro_result, sentiment_result)
+
+    # 4. Notification
+    telegram_bot.notify_decision(decision)
+    print(f"[{datetime.now()}] Décision envoyée : {decision['direction']} "
+          f"(confiance {decision['confidence']*100:.0f}%)")
+
+
+def main_loop():
+    while True:
+        try:
+            run_cycle()
+        except Exception:
+            print("Erreur pendant le cycle :")
+            traceback.print_exc()
+        time.sleep(config.CHECK_INTERVAL_SECONDS)
+
+
+if __name__ == "__main__":
+    main_loop()
