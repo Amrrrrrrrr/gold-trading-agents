@@ -12,14 +12,38 @@ rend toute prédiction peu fiable.
 IMPORTANT : ceci est un outil d'aide à la décision, pas un conseil financier.
 Toute décision d'achat/vente reste sous la responsabilité de l'utilisateur.
 """
+import json
+import os
 import config
+
+WEIGHTS_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "weights.json")
+
+
+def _load_weights() -> dict:
+    """
+    Charge les poids calibrés automatiquement (weights.json, généré par
+    calibrate_weights.py à partir des résultats réels) si disponibles et
+    basés sur un échantillon suffisant. Sinon, retombe sur les poids par
+    défaut définis dans config.py.
+    """
+    if os.path.isfile(WEIGHTS_FILE):
+        try:
+            with open(WEIGHTS_FILE) as f:
+                data = json.load(f)
+            if data.get("sample_size", 0) >= config.MIN_SAMPLES_FOR_CALIBRATION:
+                return data["weights"]
+        except Exception:
+            pass
+    return config.WEIGHTS
 
 
 def aggregate(technical: dict, macro: dict, sentiment: dict, calendar: dict) -> dict:
+    weights = _load_weights()
+
     weighted_score = (
-        technical["score"] * config.WEIGHTS["technical"]
-        + macro["score"] * config.WEIGHTS["macro"]
-        + sentiment["score"] * config.WEIGHTS["sentiment"]
+        technical["score"] * weights["technical"]
+        + macro["score"] * weights["macro"]
+        + sentiment["score"] * weights["sentiment"]
     )
 
     confidence = min(abs(weighted_score), 1.0)
@@ -70,4 +94,9 @@ def aggregate(technical: dict, macro: dict, sentiment: dict, calendar: dict) -> 
         "stop_loss": stop_loss,
         "take_profit": take_profit,
         "forced_neutral": forced_neutral,
+        "component_scores": {
+            "technical": technical["score"],
+            "macro": macro["score"],
+            "sentiment": sentiment["score"],
+        },
     }

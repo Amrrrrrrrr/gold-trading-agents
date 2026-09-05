@@ -1,0 +1,42 @@
+name: Evaluate and Calibrate
+
+on:
+  schedule:
+    # Toutes les 4 heures, avec un décalage pour ne pas tourner en même
+    # temps que le cycle horaire principal
+    - cron: "15 */4 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  evaluate-and-calibrate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout du code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Installer les dépendances
+        run: pip install -r requirements.txt
+
+      - name: Évaluer les décisions passées
+        env:
+          TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
+        run: python evaluate_outcomes.py
+
+      - name: Recalibrer les poids
+        run: python calibrate_weights.py
+
+      - name: Commiter les résultats
+        run: |
+          git config user.name "gold-agent-bot"
+          git config user.email "actions@github.com"
+          git add logs/decisions.csv weights.json
+          git diff --staged --quiet || git commit -m "Auto-évaluation et calibration $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          git push

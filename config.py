@@ -39,6 +39,18 @@ WEIGHTS = {
 CONFIDENCE_THRESHOLD_STRONG = 0.65   # au-dessus : signal jugé "fort"
 CONFIDENCE_THRESHOLD_NEUTRAL = 0.15  # en dessous de cet écart : NEUTRE
 
+# --- Auto-calibration ---
+# Nombre minimum de décisions évaluées avant de faire confiance aux poids
+# auto-calibrés plutôt qu'aux poids par défaut ci-dessus
+MIN_SAMPLES_FOR_CALIBRATION = 30
+
+# Fenêtre après une décision pour juger si le marché lui a donné raison (heures)
+OUTCOME_EVALUATION_HOURS = 4
+
+# Mouvement de prix minimum (%) pour considérer que le marché a "confirmé"
+# une direction plutôt que d'être resté plat
+OUTCOME_MIN_MOVE_PCT = 0.10
+
 # --- Gestion du risque (suggestions, pas des ordres automatiques) ---
 ATR_MULTIPLIER_SL = 1.5   # stop-loss = prix +/- (ATR * ce multiplicateur)
 ATR_MULTIPLIER_TP = 2.5   # take-profit = prix +/- (ATR * ce multiplicateur)
