@@ -8,6 +8,7 @@ from datetime import datetime
 import config
 from agents import data_agent, technical_agent, macro_agent, sentiment_agent, decision_agent, calendar_agent
 import telegram_bot
+import logger
 
 
 def run_cycle():
@@ -38,8 +39,9 @@ def run_cycle():
     # 3. Décision finale (avec sécurité calendrier intégrée)
     decision = decision_agent.aggregate(technical_result, macro_result, sentiment_result, calendar_result)
 
-    # 4. Notification
+    # 4. Notification + log pour suivi de performance
     telegram_bot.notify_decision(decision)
+    logger.log_decision(decision)
     print(f"[{datetime.now()}] Décision envoyée : {decision['direction']} "
           f"(confiance {decision['confidence']*100:.0f}%)")
 

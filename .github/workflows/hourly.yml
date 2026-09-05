@@ -6,6 +6,9 @@ on:
     - cron: "0 * * * *"
   workflow_dispatch: {}  # permet de le lancer manuellement depuis l'onglet Actions
 
+permissions:
+  contents: write  # nécessaire pour que le workflow puisse commiter le log
+
 jobs:
   run-agent:
     runs-on: ubuntu-latest
@@ -28,3 +31,11 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python main.py
+
+      - name: Enregistrer le log de décision dans le repo
+        run: |
+          git config user.name "gold-agent-bot"
+          git config user.email "actions@github.com"
+          git add logs/decisions.csv
+          git diff --staged --quiet || git commit -m "Log décision $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          git push
