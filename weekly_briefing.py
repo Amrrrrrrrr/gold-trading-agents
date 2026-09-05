@@ -18,18 +18,25 @@ def build_weekly_briefing() -> str:
 
     relevant = calendar_agent.get_relevant_usd_events(raw_events)
 
-    if not relevant:
-        return "📅 SEMAINE À VENIR — OR (XAU/USD)\n\nAucun événement macro majeur détecté pour cette semaine."
+    now = datetime.now(timezone.utc)
+    upcoming = []
+    for event in relevant:
+        event_time = calendar_agent._parse_event_time(event)
+        if event_time is None:
+            continue
+        if event_time.tzinfo is None:
+            event_time = event_time.replace(tzinfo=timezone.utc)
+        if event_time >= now:
+            upcoming.append((event, event_time))
+
+    if not upcoming:
+        return "📅 SEMAINE À VENIR — OR (XAU/USD)\n\nAucun événement macro majeur restant cette semaine."
 
     lines = ["📅 SEMAINE À VENIR — OR (XAU/USD)", "", "Événements macro majeurs à surveiller :"]
 
-    for event in sorted(relevant, key=lambda e: e.get("date", "")):
+    for event, event_time in sorted(upcoming, key=lambda x: x[1]):
         title = event.get("title") or event.get("event")
-        event_time = calendar_agent._parse_event_time(event)
-        if event_time:
-            date_str = event_time.strftime("%A %d/%m à %H:%M UTC")
-        else:
-            date_str = "date inconnue"
+        date_str = event_time.strftime("%A %d/%m à %H:%M UTC")
         lines.append(f"• {date_str} — {title}")
 
     lines.append("")
