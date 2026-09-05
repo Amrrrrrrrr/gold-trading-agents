@@ -16,7 +16,7 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 
 # --- Marché suivi ---
 SYMBOL = "XAU/USD"          # Or contre dollar
-DXY_SYMBOL = "DXY"          # Indice dollar (proxy macro)
+DXY_SYMBOL = "EUR/USD"      # Proxy de force du dollar (DXY non dispo en plan gratuit Twelve Data)
 
 # --- Fréquence ---
 CHECK_INTERVAL_SECONDS = 60 * 60  # toutes les heures
