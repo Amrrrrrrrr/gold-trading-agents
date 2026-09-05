@@ -46,20 +46,16 @@ def run_cycle():
     # 3. Décision finale (avec sécurité calendrier intégrée)
     decision = decision_agent.aggregate(technical_result, macro_result, sentiment_result, calendar_result)
 
-    # 3a. Cooldown : éviter de sur-réagir avec des signaux trop rapprochés
+    # 3a. Cooldown : on avertit mais on ne cache plus le signal réel
     if decision["direction"] in ("LONG", "SHORT"):
         last_directional_time = logger.get_last_directional_time()
         if last_directional_time is not None:
             hours_since_last = (now - last_directional_time).total_seconds() / 3600
             if hours_since_last < config.TRADE_COOLDOWN_HOURS:
-                decision["direction"] = "NEUTRE"
-                decision["confidence"] = 0.0
-                decision["stop_loss"] = None
-                decision["take_profit"] = None
                 decision["warnings"].insert(
                     0,
-                    f"En cooldown : dernier signal directionnel il y a {hours_since_last:.1f}h "
-                    f"(minimum {config.TRADE_COOLDOWN_HOURS}h entre deux trades)"
+                    f"⏱️ COOLDOWN ACTIF : dernier signal directionnel il y a {hours_since_last:.1f}h "
+                    f"(recommandé : {config.TRADE_COOLDOWN_HOURS}h entre deux trades) — à toi de juger"
                 )
 
     # 3b. Taille de position suggérée (si LONG/SHORT)

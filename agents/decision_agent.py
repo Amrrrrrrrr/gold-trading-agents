@@ -58,16 +58,14 @@ def aggregate(technical: dict, macro: dict, sentiment: dict, calendar: dict) -> 
     all_reasons = technical["reasons"] + macro["reasons"] + sentiment["reasons"] + calendar["reasons"]
     all_warnings = technical["warnings"] + macro["warnings"] + sentiment["warnings"] + calendar["warnings"]
 
-    # --- Sécurité : événement macro imminent -> override en NEUTRE ---
-    forced_neutral = False
+    # --- Alerte (mais plus d'override) : événement macro imminent ---
+    caution_imminent_event = False
     if calendar.get("imminent_event"):
-        forced_neutral = True
-        direction = "NEUTRE"
-        confidence = 0.0
+        caution_imminent_event = True
         all_warnings.insert(
             0,
-            f"⚠️ Décision forcée en NEUTRE : événement macro majeur imminent "
-            f"('{calendar['imminent_event']['title']}')"
+            f"⚠️ PRUDENCE : événement macro majeur imminent "
+            f"('{calendar['imminent_event']['title']}') — le signal ci-dessous reste affiché, à toi de juger"
         )
 
     # --- Niveaux suggérés (basés sur l'ATR, pas des ordres automatiques) ---
@@ -76,7 +74,7 @@ def aggregate(technical: dict, macro: dict, sentiment: dict, calendar: dict) -> 
     stop_loss = None
     take_profit = None
 
-    if not forced_neutral and entry is not None and atr is not None:
+    if entry is not None and atr is not None:
         if direction == "LONG":
             stop_loss = entry - atr * config.ATR_MULTIPLIER_SL
             take_profit = entry + atr * config.ATR_MULTIPLIER_TP
@@ -93,7 +91,8 @@ def aggregate(technical: dict, macro: dict, sentiment: dict, calendar: dict) -> 
         "entry": entry,
         "stop_loss": stop_loss,
         "take_profit": take_profit,
-        "forced_neutral": forced_neutral,
+        "forced_neutral": False,  # conservé pour compatibilité, plus jamais forcé désormais
+        "caution_imminent_event": caution_imminent_event,
         "component_scores": {
             "technical": technical["score"],
             "macro": macro["score"],
